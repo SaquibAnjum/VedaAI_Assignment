@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import type { Question, FileItem } from '../../types';
+import type { Question, FileItem, TargetSelection } from '../../types';
 import { QuestionListPane } from './QuestionListPane';
 import { DocumentViewerPane } from './DocumentViewerPane';
 import { FileText, Image as ImageIcon } from 'lucide-react';
@@ -19,18 +19,30 @@ export const Dashboard: React.FC<DashboardProps> = ({
     questions[0]?.id || null
   );
 
-  const [targetPageIndex, setTargetPageIndex] = useState<number | null>(
-    questions[0]?.mapping?.pageIndex ?? 0
-  );
+  const [targetSelection, setTargetSelection] = useState<TargetSelection | null>(() => {
+    const first = questions[0];
+    if (first) {
+      return {
+        questionId: first.id,
+        pageIndex: first.mapping?.pageIndex ?? 0,
+        timestamp: Date.now(),
+      };
+    }
+    return null;
+  });
 
   const [mobileTab, setMobileTab] = useState<'questions' | 'answersheet'>('questions');
 
   const handleSelectQuestion = (questionId: string) => {
     setSelectedQuestionId(questionId);
     const target = questions.find((q) => q.id === questionId);
-    if (target?.mapping) {
-      setTargetPageIndex(target.mapping.pageIndex);
-    }
+    const pageIdx = target?.mapping?.pageIndex ?? 0;
+
+    setTargetSelection({
+      questionId,
+      pageIndex: pageIdx,
+      timestamp: Date.now(),
+    });
   };
 
   return (
@@ -64,7 +76,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       {/* Main Grid Viewport */}
       <div className="grid flex-1 grid-cols-1 md:grid-cols-12 overflow-hidden">
-        {/* Left Pane: Questions (Visible always on Desktop, or when Mobile Tab is 'questions') */}
+        {/* Left Pane: Questions */}
         <div
           className={`h-full md:col-span-5 lg:col-span-5 overflow-hidden ${
             mobileTab === 'questions' ? 'block' : 'hidden md:block'
@@ -78,7 +90,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           />
         </div>
 
-        {/* Right Pane: Document Viewer (Visible always on Desktop, or when Mobile Tab is 'answersheet') */}
+        {/* Right Pane: Document Viewer */}
         <div
           className={`h-full md:col-span-7 lg:col-span-7 overflow-hidden ${
             mobileTab === 'answersheet' ? 'block' : 'hidden md:block'
@@ -89,7 +101,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             questions={questions}
             selectedQuestionId={selectedQuestionId}
             onSelectQuestion={handleSelectQuestion}
-            targetPageIndex={targetPageIndex}
+            targetSelection={targetSelection}
           />
         </div>
       </div>

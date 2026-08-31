@@ -42,6 +42,46 @@ function cleanBase64(dataUrl: string): { mimeType: string; data: string } {
 }
 
 /**
+ * Normalizes question strings for flexible matching (e.g. "11(a)" vs "11a" vs "Q11.a")
+ */
+function normalizeQuestionKey(key: string): string {
+  if (!key) return '';
+  return key
+    .toLowerCase()
+    .replace(/^(question|ans|answer|q|\.|\s)+/gi, '')
+    .replace(/[()\s._-]/g, '')
+    .trim();
+}
+
+/**
+ * Normalizes bounding box coordinates into 0-1000 integer scale
+ */
+function normalizeBoundingBox(rawBox: any): BoundingBox {
+  let { ymin = 100, xmin = 50, ymax = 300, xmax = 950 } = rawBox || {};
+
+  // If coordinates returned in 0..1 floating point range, scale up to 0..1000
+  if (ymax <= 1.0 && xmax <= 1.0) {
+    ymin *= 1000;
+    xmin *= 1000;
+    ymax *= 1000;
+    xmax *= 1000;
+  } else if (ymax <= 100.0 && xmax <= 100.0 && (ymax > 1.0 || xmax > 1.0)) {
+    // If coordinates returned in 0..100 percentage range, scale up to 0..1000
+    ymin *= 10;
+    xmin *= 10;
+    ymax *= 10;
+    xmax *= 10;
+  }
+
+  ymin = Math.max(0, Math.min(1000, Math.round(ymin)));
+  xmin = Math.max(0, Math.min(1000, Math.round(xmin)));
+  ymax = Math.max(ymin + 20, Math.min(1000, Math.round(ymax)));
+  xmax = Math.max(xmin + 20, Math.min(1000, Math.round(xmax)));
+
+  return { ymin, xmin, ymax, xmax };
+}
+
+/**
  * Robust helper to call Gemini generateContent with automatic model fallback
  */
 async function generateWithFallback(
@@ -63,11 +103,9 @@ async function generateWithFallback(
     } catch (err: any) {
       console.warn(`Model ${modelName} call failed or not found:`, err?.message || err);
       lastError = err;
-      // If error is 404 (not found), continue to try next model in fallback list
       if (err?.status === 404 || String(err?.message).includes('404') || String(err).includes('NOT_FOUND')) {
         continue;
       }
-      // Re-throw if it's an authorization/invalid key error or quota error
       throw err;
     }
   }
@@ -84,7 +122,6 @@ export async function extractQuestionsWithGemini(
 ): Promise<Question[]> {
   const key = apiKey || getStoredApiKey();
 
-  // If no API Key provided, return sample question extraction
   if (!key) {
     console.log('No Gemini API key provided. Utilizing standard mock extraction pipeline.');
     await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -151,7 +188,6 @@ Follow these instructions strictly:
     }));
   } catch (error) {
     console.error('Error during Gemini Question Extraction:', error);
-    // Fallback to sample data gracefully if API call fails
     console.warn('Falling back to high-fidelity sample question dataset.');
     return SAMPLE_QUESTIONS.map((q) => ({
       id: q.id,
@@ -175,7 +211,6 @@ export async function mapAndEvaluateAnswersWithGemini(
 ): Promise<Question[]> {
   const key = apiKey || getStoredApiKey();
 
-  // If no API Key provided, fallback to sample spatial evaluation mapping
   if (!key) {
     console.log('Using sample spatial grounding evaluation data.');
     await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -185,11 +220,11 @@ export async function mapAndEvaluateAnswersWithGemini(
   try {
     const ai = new GoogleGenAI({ apiKey: key });
 
-    const contents = answerPages.map((pageDataUrl) => {
+    const contents: any[] = [];
+    answerPages.forEach((pageDataUrl, idx) => {
+      contents.push({ text: `--- [Answer Sheet Page ${idx} (0-indexed)] ---` });
       const { mimeType, data } = cleanBase64(pageDataUrl);
-      return {
-        inlineData: { mimeType, data },
-      };
+      contents.push({ inlineData: { mimeType, data } });
     });
 
     const questionsPrompt = JSON.stringify(
@@ -202,25 +237,26 @@ export async function mapAndEvaluateAnswersWithGemini(
     );
 
     const promptText = `You are an expert AI Assessment & Spatial Grounding Engine.
-You are given student handwritten answer sheet images (indexed 0, 1, 2...).
-Here is the list of questions to find and evaluate:
+You are given student handwritten answer sheet images across multiple pages (indexed 0, 1, 2... in order).
+Here is the list of extracted questions to locate, match, and evaluate on the answer sheet:
 ${questionsPrompt}
 
 Instructions:
-1. Locate where each question is answered across the answer sheet pages.
-2. Determine evaluation status:
-   - "Answered": Answer is present and attempted in standard sequential order.
-   - "Out of Order": Answer is attempted out of numerical sequence (e.g. Q13 attempted before Q12).
-   - "Unanswered": No answer or attempt is detected on any page for this question.
-3. Compute SPATIAL BOUNDING BOX for each answered question:
-   - Normalized coordinates [ymin, xmin, ymax, xmax] on a scale of 0 to 1000 (where top-left is [0,0] and bottom-right is [1000,1000]).
-   - Indicate 0-indexed pageIndex where the answer was found.
-4. Evaluate the answer:
-   - Transcribe extracted handwritten text.
+1. Thoroughly scan EVERY page of the answer sheet to locate where each question is answered or attempted.
+2. Sub-part Mapping: Match sub-part questions (e.g. 11(a), 11(b), 1(i), 1(ii)) to their specific handwritten responses.
+3. Detect Out-of-Order Attempts:
+   - If a student answers a question out of numerical sequence (e.g., Q13 attempted on Page 4 before Q11(a)), set status to "Out of Order" and write a clear outOfOrderSequenceNote.
+   - Set status to "Answered" if answered in standard order.
+   - Set status to "Unanswered" if no attempt is detected on any page for this question.
+4. Compute SPATIAL BOUNDING BOX for each answered question:
+   - Normalized coordinates [ymin, xmin, ymax, xmax] strictly on a scale of 0 to 1000 (where top-left of the page is [0,0] and bottom-right is [1000,1000]).
+   - Record the exact 0-indexed pageIndex (e.g. 0, 1, 2, 3...) where the answer is located.
+5. Evaluate & Transcribe:
+   - Transcribe extracted handwritten answer text (including formulas, equations, or diagram descriptions).
    - Assign scoredMarks (between 0 and maxMarks).
-   - Write constructive aiFeedback.
-   - Provide rubric breakdown.
-5. Return JSON matching the specified response schema.`;
+   - Write constructive, encouraging aiFeedback.
+   - Provide itemized rubricBreakdown.
+6. Return JSON matching the schema, setting questionId to match the question's id or questionNumber.`;
 
     const config = {
       responseMimeType: 'application/json',
@@ -274,9 +310,25 @@ Instructions:
 
     const evaluationResults = JSON.parse(text);
 
-    // Merge evaluation back into Question list
+    // Merge evaluation back into Question list using robust matching engine
     return questions.map((q) => {
-      const result = evaluationResults.find((r: any) => r.questionId === q.id || r.questionId === q.questionNumber);
+      const normQId = normalizeQuestionKey(q.id);
+      const normQNum = normalizeQuestionKey(q.questionNumber);
+
+      const result = evaluationResults.find((r: any) => {
+        if (!r || !r.questionId) return false;
+        const rId = String(r.questionId);
+        const normRId = normalizeQuestionKey(rId);
+
+        return (
+          rId === q.id ||
+          rId === q.questionNumber ||
+          normRId === normQId ||
+          normRId === normQNum ||
+          (normQNum.length > 0 && normRId.includes(normQNum))
+        );
+      });
+
       if (!result || result.status === 'Unanswered') {
         return {
           ...q,
@@ -285,16 +337,21 @@ Instructions:
         };
       }
 
-      const bbox: BoundingBox = result.boundingBox || { ymin: 100, xmin: 50, ymax: 300, xmax: 950 };
+      const bbox = normalizeBoundingBox(result.boundingBox);
+
+      let parsedPageIndex = typeof result.pageIndex === 'number' ? result.pageIndex : parseInt(String(result.pageIndex), 10);
+      if (isNaN(parsedPageIndex) || parsedPageIndex < 0 || parsedPageIndex >= answerPages.length) {
+        parsedPageIndex = 0;
+      }
 
       const mapping: AnswerMapping = {
-        pageIndex: typeof result.pageIndex === 'number' ? result.pageIndex : 0,
+        pageIndex: parsedPageIndex,
         boundingBox: bbox,
         extractedAnswerText: result.extractedAnswerText || '',
         aiFeedback: result.aiFeedback || 'Evaluated by Gemini AI.',
-        confidenceScore: result.confidenceScore || 0.95,
+        confidenceScore: typeof result.confidenceScore === 'number' ? result.confidenceScore : 0.95,
         outOfOrderSequenceNote: result.outOfOrderSequenceNote,
-        rubricBreakdown: result.rubricBreakdown || [],
+        rubricBreakdown: Array.isArray(result.rubricBreakdown) ? result.rubricBreakdown : [],
       };
 
       return {

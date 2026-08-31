@@ -66,3 +66,10 @@ export interface ScoreSummary {
   outOfOrderCount: number;
   totalQuestions: number;
 }
+
+export interface TargetSelection {
+  questionId: string;
+  pageIndex: number;
+  timestamp: number;
+}
+

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import type { FileItem, Question } from '../../types';
+import type { FileItem, Question, TargetSelection } from '../../types';
 import { BoundingBoxOverlay } from './BoundingBoxOverlay';
 import { ChevronLeft, ChevronRight, Minus, Plus } from 'lucide-react';
 
@@ -8,7 +8,7 @@ interface DocumentViewerPaneProps {
   questions: Question[];
   selectedQuestionId: string | null;
   onSelectQuestion: (questionId: string) => void;
-  targetPageIndex: number | null;
+  targetSelection: TargetSelection | null;
 }
 
 export const DocumentViewerPane: React.FC<DocumentViewerPaneProps> = ({
@@ -16,7 +16,7 @@ export const DocumentViewerPane: React.FC<DocumentViewerPaneProps> = ({
   questions,
   selectedQuestionId,
   onSelectQuestion,
-  targetPageIndex,
+  targetSelection,
 }) => {
   const [currentPage, setCurrentPage] = useState(0);
   const [zoomLevel, setZoomLevel] = useState(100);
@@ -24,14 +24,25 @@ export const DocumentViewerPane: React.FC<DocumentViewerPaneProps> = ({
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
-    if (targetPageIndex !== null && targetPageIndex >= 0 && targetPageIndex < ansFile.pages.length) {
-      setCurrentPage(targetPageIndex);
-      const pageEl = pageRefs.current[targetPageIndex];
-      if (pageEl) {
-        pageEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
+    if (!targetSelection) return;
+    const { questionId, pageIndex } = targetSelection;
+
+    if (pageIndex >= 0 && pageIndex < ansFile.pages.length) {
+      setCurrentPage(pageIndex);
+
+      setTimeout(() => {
+        const bboxEl = document.getElementById(`bbox-${questionId}`);
+        if (bboxEl) {
+          bboxEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else {
+          const pageEl = pageRefs.current[pageIndex];
+          if (pageEl) {
+            pageEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }
+      }, 60);
     }
-  }, [targetPageIndex, ansFile.pages.length]);
+  }, [targetSelection, ansFile.pages.length]);
 
   const handlePrevPage = () => {
     if (currentPage > 0) {
@@ -54,14 +65,14 @@ export const DocumentViewerPane: React.FC<DocumentViewerPaneProps> = ({
 
   return (
     <div className="flex h-full flex-col bg-[#3b3d40] text-white">
-      {/* Top Header Bar matching Figma screenshot 4 */}
+      {/* Top Header Bar matching Figma */}
       <div className="flex items-center justify-between gap-3 bg-[#18181b] px-4 py-2.5 border-b border-slate-700/60 shrink-0">
         {/* Left: Title */}
         <h2 className="text-sm font-bold text-slate-100">Answer Sheet</h2>
 
         {/* Center/Right: Zoom & Page Controls */}
         <div className="flex items-center gap-3">
-          {/* Zoom controls matching Figma (- 100% +) */}
+          {/* Zoom controls */}
           <div className="flex items-center gap-2 bg-[#27272a] text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-700/60 shadow-xs">
             <button
               onClick={handleZoomOut}
@@ -80,7 +91,7 @@ export const DocumentViewerPane: React.FC<DocumentViewerPaneProps> = ({
             </button>
           </div>
 
-          {/* Page navigation pill matching Figma (< Page 1 of 4 >) */}
+          {/* Page navigation pill */}
           <div className="flex items-center gap-2 bg-[#27272a] text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-700/60 shadow-xs">
             <button
               onClick={handlePrevPage}
@@ -126,7 +137,7 @@ export const DocumentViewerPane: React.FC<DocumentViewerPaneProps> = ({
               className="w-full h-auto block select-none"
             />
 
-            {/* Bounding Box SVG Spatial Overlay Layer */}
+            {/* Bounding Box Overlay Layer */}
             <BoundingBoxOverlay
               pageIndex={pageIdx}
               questions={questions}
