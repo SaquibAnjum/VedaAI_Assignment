@@ -48,7 +48,7 @@ export const SummaryReportModal: React.FC<SummaryReportModalProps> = ({
         maxMarks: q.maxMarks,
         scoredMarks: q.scoredMarks,
         status: q.status,
-        pageIndex: q.mapping ? q.mapping.pageIndex + 1 : null,
+        pageIndex: (q.mapping && q.mapping.pageIndex !== null) ? q.mapping.pageIndex + 1 : null,
         boundingBox: q.mapping?.boundingBox,
         extractedAnswerText: q.mapping?.extractedAnswerText,
         aiFeedback: q.mapping?.aiFeedback,
@@ -181,7 +181,7 @@ export const SummaryReportModal: React.FC<SummaryReportModalProps> = ({
                         <StatusBadge status={q.status} size="sm" />
                       </td>
                       <td className="p-3 text-center font-medium text-slate-400 print:text-black">
-                        {q.mapping ? `P${q.mapping.pageIndex + 1}` : '—'}
+                        {q.mapping && q.mapping.pageIndex !== null ? `P${q.mapping.pageIndex + 1}` : '—'}
                       </td>
                       <td className="p-3 text-right font-bold text-indigo-300 print:text-black">
                         {q.scoredMarks} / {q.maxMarks}

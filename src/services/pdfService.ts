@@ -57,6 +57,35 @@ export async function convertPdfToImages(
 }
 
 /**
+ * Extracts raw text content page-by-page from a PDF File if text layer exists
+ */
+export async function extractTextFromPdf(file: File): Promise<string[]> {
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+    const pdf = await loadingTask.promise;
+    const totalPages = pdf.numPages;
+    const pageTexts: string[] = [];
+
+    for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items
+        .map((item: any) => item.str || '')
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      pageTexts.push(pageText);
+    }
+
+    return pageTexts;
+  } catch (error) {
+    console.warn('Could not extract text layer from PDF:', error);
+    return [];
+  }
+}
+
+/**
  * Reads an image file (PNG/JPEG/WEBP) and converts it into a base64 Data URL
  */
 export function convertImageToDataUrl(file: File): Promise<string> {

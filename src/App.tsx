@@ -18,6 +18,7 @@ import {
   getSampleQuestionPaperFile,
   getSampleAnswerSheetFile,
 } from './data/sampleData';
+import { extractTextFromPdf } from './services/pdfService';
 
 export function App() {
   const [qpFile, setQpFile] = useState<FileItem | null>(null);
@@ -76,7 +77,16 @@ export function App() {
         message: 'Extracting questions and sub-parts...',
       });
 
-      const extractedQuestions = await extractQuestionsWithGemini(qpFile.pages);
+      let qpText: string[] | undefined;
+      if (qpFile.rawFile && qpFile.isPdf) {
+        try {
+          qpText = await extractTextFromPdf(qpFile.rawFile);
+        } catch (e) {
+          console.warn('Could not extract PDF text layer:', e);
+        }
+      }
+
+      const extractedQuestions = await extractQuestionsWithGemini(qpFile.pages, undefined, qpText);
 
       setProcessingProgress({
         status: 'mapping_answers',

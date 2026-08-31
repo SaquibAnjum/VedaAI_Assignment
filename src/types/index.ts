@@ -15,13 +15,17 @@ export interface RubricItem {
 }
 
 export interface AnswerMapping {
-  pageIndex: number; // 0-indexed
-  boundingBox: BoundingBox;
+  answerId: string | null;
+  detectedQuestionId: string | null;
+  pageIndex: number | null; // 0-indexed primary page
+  boundingBox: BoundingBox | null;
   extractedAnswerText: string;
   aiFeedback: string;
   rubricBreakdown?: RubricItem[];
   confidenceScore: number; // 0.0 - 1.0
+  matched: boolean;
   outOfOrderSequenceNote?: string;
+  additionalPages?: { pageIndex: number; boundingBox: BoundingBox }[];
 }
 
 export interface Question {
@@ -31,6 +35,8 @@ export interface Question {
   maxMarks: number;
   scoredMarks: number;
   status: EvaluationStatus;
+  parentQuestionId?: string; // parent ID if sub-part (e.g. "q11" for "11(a)")
+  subPartLabel?: string; // e.g. "a", "b", "i", "ii"
   mapping?: AnswerMapping;
   isCustomEdited?: boolean;
 }

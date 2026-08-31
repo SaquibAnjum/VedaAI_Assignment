@@ -21,6 +21,7 @@ export const DocumentViewerPane: React.FC<DocumentViewerPaneProps> = ({
   const [currentPage, setCurrentPage] = useState(0);
   const [zoomLevel, setZoomLevel] = useState(100);
 
+  const containerRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
@@ -31,24 +32,69 @@ export const DocumentViewerPane: React.FC<DocumentViewerPaneProps> = ({
       setCurrentPage(pageIndex);
 
       setTimeout(() => {
+        const container = containerRef.current;
         const bboxEl = document.getElementById(`bbox-${questionId}`);
-        if (bboxEl) {
-          bboxEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        } else {
-          const pageEl = pageRefs.current[pageIndex];
-          if (pageEl) {
-            pageEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }
+
+        if (container && bboxEl) {
+          const containerRect = container.getBoundingClientRect();
+          const bboxRect = bboxEl.getBoundingClientRect();
+          const relativeTop = bboxRect.top - containerRect.top + container.scrollTop;
+          const targetScrollTop = relativeTop - containerRect.height / 2 + bboxRect.height / 2;
+
+          container.scrollTo({
+            top: Math.max(0, targetScrollTop),
+            behavior: 'smooth',
+          });
+        } else if (container && pageRefs.current[pageIndex]) {
+          const pageEl = pageRefs.current[pageIndex]!;
+          const containerRect = container.getBoundingClientRect();
+          const pageRect = pageEl.getBoundingClientRect();
+          const relativeTop = pageRect.top - containerRect.top + container.scrollTop;
+
+          container.scrollTo({
+            top: Math.max(0, relativeTop - 20),
+            behavior: 'smooth',
+          });
         }
-      }, 60);
+      }, 80);
     }
   }, [targetSelection, ansFile.pages.length]);
+
+  const handleScroll = () => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const containerCenter = container.scrollTop + container.clientHeight / 2;
+    let closestPage = 0;
+    let minDistance = Infinity;
+
+    pageRefs.current.forEach((el, idx) => {
+      if (!el) return;
+      const elCenter = el.offsetTop + el.clientHeight / 2;
+      const distance = Math.abs(containerCenter - elCenter);
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestPage = idx;
+      }
+    });
+
+    if (closestPage !== currentPage) {
+      setCurrentPage(closestPage);
+    }
+  };
 
   const handlePrevPage = () => {
     if (currentPage > 0) {
       const nextIdx = currentPage - 1;
       setCurrentPage(nextIdx);
-      pageRefs.current[nextIdx]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const container = containerRef.current;
+      const pageEl = pageRefs.current[nextIdx];
+      if (container && pageEl) {
+        const containerRect = container.getBoundingClientRect();
+        const pageRect = pageEl.getBoundingClientRect();
+        const relativeTop = pageRect.top - containerRect.top + container.scrollTop;
+        container.scrollTo({ top: Math.max(0, relativeTop - 20), behavior: 'smooth' });
+      }
     }
   };
 
@@ -56,7 +102,14 @@ export const DocumentViewerPane: React.FC<DocumentViewerPaneProps> = ({
     if (currentPage < ansFile.pages.length - 1) {
       const nextIdx = currentPage + 1;
       setCurrentPage(nextIdx);
-      pageRefs.current[nextIdx]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const container = containerRef.current;
+      const pageEl = pageRefs.current[nextIdx];
+      if (container && pageEl) {
+        const containerRect = container.getBoundingClientRect();
+        const pageRect = pageEl.getBoundingClientRect();
+        const relativeTop = pageRect.top - containerRect.top + container.scrollTop;
+        container.scrollTo({ top: Math.max(0, relativeTop - 20), behavior: 'smooth' });
+      }
     }
   };
 
@@ -117,7 +170,11 @@ export const DocumentViewerPane: React.FC<DocumentViewerPaneProps> = ({
       </div>
 
       {/* Main Document Viewer Canvas */}
-      <div className="viewer-container flex-1 overflow-auto p-4 md:p-8 flex flex-col items-center gap-6">
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="viewer-container flex-1 overflow-auto p-4 md:p-8 flex flex-col items-center gap-6"
+      >
         {ansFile.pages.map((dataUrl, pageIdx) => (
           <div
             key={pageIdx}
